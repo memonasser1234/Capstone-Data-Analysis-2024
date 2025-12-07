@@ -1,0 +1,167 @@
+import pandas as pd
+import numpy as np
+
+def correct_data_cleaning(input_file, output_file):
+    # قراءة البيانات
+    df = pd.read_csv("survey_data_updated 5.csv", encoding='utf-8')
+    
+    print("🚀 بدء معالجة البيانات...")
+    print(f"📊 العدد الأصلي للصفوف: {len(df)}")
+    
+    # 1. اختيار الأعمدة المطلوبة فقط (تم استبدال الأعمدة)
+    selected_columns = [
+        'LanguageWantToWorkWith', 
+        'DatabaseWantToWorkWith', 
+        'PlatformWantToWorkWith', 
+        'WebframeWantToWorkWith',
+        'EdLevel', 
+        'Age', 
+        'Country'
+    ]
+    available_columns = [col for col in selected_columns if col in df.columns]
+    print(f"📋 الأعمدة المختارة: {available_columns}")
+    
+    if not available_columns:
+        print("❌ لم يتم العثور على أي من الأعمدة المطلوبة في البيانات")
+        return None, None
+    
+    # إنشاء DataFrame جديد بالأعمدة المطلوبة فقط
+    df_selected = df[available_columns].copy()
+    
+    # 2. فصل كل عمود تقني إلى قيم فردية مع الاحتفاظ بجميع الأعمدة
+    print("\n🔧 فصل البيانات مع الاحتفاظ بجميع الأعمدة...")
+    
+    # الأعمدة متعددة القيم (تم استبدالها)
+    multi_value_columns = [
+        'LanguageWantToWorkWith', 
+        'DatabaseWantToWorkWith', 
+        'PlatformWantToWorkWith', 
+        'WebframeWantToWorkWith'
+    ]
+    
+    # الأعمدة الديموغرافية
+    demographic_columns = ['EdLevel', 'Age', 'Country']
+    
+    # قائمة لتخزين جميع الصفوف المفصولة
+    all_rows = []
+    
+    for index, row in df_selected.iterrows():
+        # البيانات الديموغرافية
+        demo_data = {col: row[col] for col in demographic_columns if col in row}
+        
+        # معالجة كل عمود تقني - فصل القيم
+        tech_data = {}
+        for tech_col in multi_value_columns:
+            if tech_col in row and pd.notna(row[tech_col]):
+                # فصل القيم باستخدام الفاصلة المنقوطة وتنظيفها
+                values = [v.strip() for v in str(row[tech_col]).split(';') if v.strip()]
+                tech_data[tech_col] = values
+            else:
+                tech_data[tech_col] = []
+        
+        # إنشاء جميع التركيبات الممكنة
+        max_length = max(len(tech_data[col]) for col in multi_value_columns)
+        
+        for i in range(max_length):
+            new_row = demo_data.copy()
+            
+            # إضافة قيمة واحدة من كل عمود تقني
+            for tech_col in multi_value_columns:
+                if i < len(tech_data[tech_col]):
+                    new_row[tech_col] = tech_data[tech_col][i]
+                else:
+                    new_row[tech_col] = ""
+            
+            all_rows.append(new_row)
+    
+    # إنشاء DataFrame نهائي
+    if all_rows:
+        final_df = pd.DataFrame(all_rows)
+        print(f"✅ تم إنشاء {len(final_df)} سطر من البيانات المفصولة")
+    else:
+        print("❌ لم يتم إنشاء أي بيانات")
+        return None, None
+    
+    # 3. تنظيف البيانات النهائية
+    print("\n🧹 تنظيف البيانات النهائية...")
+    
+    # إزالة الصفوف التي تكون جميع الأعمدة التقنية فارغة
+    tech_cols_in_final = [col for col in multi_value_columns if col in final_df.columns]
+    if tech_cols_in_final:
+        # حذف الصفوف التي تكون جميع الأعمدة التقنية فارغة
+        empty_mask = final_df[tech_cols_in_final].apply(
+            lambda x: all(val == "" for val in x), axis=1
+        )
+        final_df = final_df[~empty_mask]
+    
+    # إزالة الصفوف المكررة
+    final_df = final_df.drop_duplicates()
+    
+    print(f"   ✅ عدد الصفوف بعد التنظيف: {len(final_df)}")
+    
+    # 4. أخذ عينة من الناتج (70000 سطر)
+    print("\n📊 أخذ عينة من البيانات...")
+    
+    if len(final_df) > 70000:
+        sample_df = final_df.sample(n=70000, random_state=42)
+        print(f"   ✅ تم أخذ عينة عشوائية من {len(sample_df)} سطر")
+    else:
+        sample_df = final_df
+        print(f"   ✅ تم الاحتفاظ بجميع البيانات ({len(sample_df)} سطر)")
+    
+    # 5. حفظ النتائج في Excel
+    print("\n💾 حفظ البيانات في ملف Excel...")
+    
+    try:
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            # حفظ العينة
+            sample_df.to_excel(writer, sheet_name='البيانات_المنظفة', index=False)
+            
+            # حفظ البيانات الكاملة
+            final_df.to_excel(writer, sheet_name='البيانات_الكاملة', index=False)
+        
+        print(f"✅ تم الانتهاء! الملف المحفوظ: {output_file}")
+        print(f"🎯 حجم العينة المحفوظة: {len(sample_df)} سطر")
+        
+    except Exception as e:
+        print(f"❌ خطأ في حفظ الملف: {e}")
+        return None, None
+    
+    return sample_df, final_df
+
+# استخدام الدالة
+if __name__ == "__main__":
+    input_filename = "survey_data_updated 5.csv"
+    output_filename = "cleaned_future_technology_data.xlsx"
+    
+    sample_data, full_data = correct_data_cleaning(input_filename, output_filename)
+    
+    if sample_data is not None and len(sample_data) > 0:
+        print("\n🎯 عينة من البيانات المُنظفة (5 صفوف أولى):")
+        print(sample_data.head())
+        
+        print("\n📋 هيكل البيانات النهائي:")
+        print("=" * 60)
+        print("الأعمدة المتاحة في الملف النهائي:")
+        for col in sample_data.columns:
+            non_empty_count = (sample_data[col] != "").sum()
+            print(f"  - {col}: {non_empty_count} قيمة غير فارغة")
+        
+        print("\n📊 أمثلة على البيانات:")
+        print("\nاللغات المطلوبة للعمل المستقبلي:")
+        languages = sample_data['LanguageWantToWorkWith'][sample_data['LanguageWantToWorkWith'] != ""].unique()[:5]
+        for lang in languages:
+            print(f"  - {lang}")
+        
+        print("\nقواعد البيانات المطلوبة للعمل المستقبلي:")
+        databases = sample_data['DatabaseWantToWorkWith'][sample_data['DatabaseWantToWorkWith'] != ""].unique()[:5]
+        for db in databases:
+            print(f"  - {db}")
+            
+        print("\nالمنصات المطلوبة للعمل المستقبلي:")
+        platforms = sample_data['PlatformWantToWorkWith'][sample_data['PlatformWantToWorkWith'] != ""].unique()[:5]
+        for platform in platforms:
+            print(f"  - {platform}")
+            
+    else:
+        print("\n❌ لا توجد بيانات للعرض")
